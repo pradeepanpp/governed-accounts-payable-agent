@@ -1,0 +1,27 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+.venv/
+
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+
+# Test and tool caches
+.pytest_cache/
+.ruff_cache/
+
+# Experiment outputs
+runs/
+
+# Frozen test sets
+data/splits/iid_test/
+data/splits/ood_test/
+
+# Editor and OS files
+.vscode/
+.DS_Store
+Thumbs.db
