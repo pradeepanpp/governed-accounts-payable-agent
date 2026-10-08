@@ -16,6 +16,7 @@ class Vendor(BaseModel):
     aliases: list[str] = Field(default_factory=list)
     approved_bank_account: str = Field(min_length=1)
     is_active: bool = True
+    created_date: date | None = None
 
 
 class PurchaseOrderStatus(str, Enum):
@@ -38,6 +39,7 @@ class PurchaseOrder(BaseModel):
     total_amount: Decimal = Field(gt=0)
     currency: str = Field(min_length=3, max_length=3)
     status: PurchaseOrderStatus = PurchaseOrderStatus.OPEN
+    line_items: list[str] = Field(default_factory=list)
 
 
 class GoodsReceiptStatus(str, Enum):
@@ -80,6 +82,9 @@ class Invoice(BaseModel):
     invoice_bank_account: str = Field(min_length=1)
     payment_terms: str = Field(min_length=1)
     raw_text: str = Field(min_length=1)
+    requested_payee: str | None = None
+    stated_totals: list[Decimal] = Field(default_factory=list)
+    line_items: list[str] = Field(default_factory=list)
 
 
 class PaymentStatus(str, Enum):
@@ -102,6 +107,39 @@ class PaymentRecord(BaseModel):
     currency: str = Field(min_length=3, max_length=3)
     payment_date: date
     status: PaymentStatus
+    was_auto_approved: bool = True
+
+
+class PolicyConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    invoice_limit: Decimal | None = Field(default=None, gt=0)
+
+    vendor_window_days: int = Field(default=7, gt=0)
+    vendor_window_limit: Decimal | None = Field(default=None, gt=0)
+
+    po_cumulative_limit: Decimal | None = Field(default=None, gt=0)
+
+    new_vendor_days: int = Field(default=30, gt=0)
+
+    price_tolerance: Decimal = Field(
+        default=Decimal("0"),
+        ge=0,
+        le=1,
+    )
+
+    quantity_tolerance: Decimal = Field(
+        default=Decimal("0"),
+        ge=0,
+    )
+
+    tax_rate: Decimal | None = Field(
+        default=None,
+        ge=0,
+        le=1,
+    )
+
+    duplicate_lookback_days: int = Field(default=90, gt=0)
 
 
 class BenchmarkCase(BaseModel):
@@ -116,6 +154,7 @@ class BenchmarkCase(BaseModel):
     goods_receipts: list[GoodsReceipt] = Field(default_factory=list)
     invoice: Invoice
     payment_history: list[PaymentRecord] = Field(default_factory=list)
+    policy: PolicyConfig = Field(default_factory=PolicyConfig)
 
 
 class ExpectedAction(str, Enum):
@@ -145,6 +184,8 @@ class GroundTruth(BaseModel):
     split: DatasetSplit
     sequence_id: str | None = None
     sequence_position: int | None = Field(default=None, gt=0)
+    template_id: str | None = None
+    scenario_id: str | None = None
 
     @model_validator(mode="after")
     def validate_sequence_fields(self):
