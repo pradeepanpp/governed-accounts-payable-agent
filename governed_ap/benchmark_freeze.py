@@ -98,9 +98,7 @@ def canonical_dataset_payload(
 def dataset_sha256(
     scenarios: list[list[BenchmarkExample]],
 ) -> str:
-    payload = canonical_dataset_payload(scenarios)
-
-    return _sha256_bytes(_canonical_json_bytes(payload))
+    return _sha256_bytes(canonical_dataset_bytes(scenarios))
 
 
 def canonical_template_catalog_payload(
@@ -261,3 +259,22 @@ def manifest_json(
         )
         + "\n"
     )
+
+
+def canonical_dataset_json(
+    scenarios: list[list[BenchmarkExample]],
+) -> str:
+    payload = canonical_dataset_payload(scenarios)
+
+    return json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+
+def canonical_dataset_bytes(
+    scenarios: list[list[BenchmarkExample]],
+) -> bytes:
+    return canonical_dataset_json(scenarios).encode("utf-8")
