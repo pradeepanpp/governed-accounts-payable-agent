@@ -13,12 +13,13 @@ from governed_ap.deterministic_checks_layer import (
 from governed_ap.enforcement_gate import (
     EnforcementGateDecision,
     enforce_decision,
+    enforcement_failure_decision,
 )
 from governed_ap.governance_contracts import (
     DecisionAgentRecommendation,
     GovernanceLayerName,
     GovernanceLayerResult,
-    LayerExecutionStatus,
+    governance_layer_failure,
 )
 from governed_ap.guardrail_layer import (
     LLMGuardrailLayer,
@@ -54,18 +55,6 @@ class GovernedAgentTrace(BaseModel):
         return self.enforcement.final_action
 
 
-def _layer_failure_result(
-    layer: GovernanceLayerName,
-    reason_code: str,
-) -> GovernanceLayerResult:
-    return GovernanceLayerResult(
-        layer=layer,
-        status=LayerExecutionStatus.FIRED,
-        minimum_action=(ExpectedAction.ESCALATE),
-        reason_codes=[reason_code],
-    )
-
-
 def _evaluate_deterministic(
     case: BenchmarkCase,
 ) -> GovernanceLayerResult:
@@ -73,7 +62,7 @@ def _evaluate_deterministic(
         return DeterministicChecksLayer().evaluate(case)
 
     except Exception:
-        return _layer_failure_result(
+        return governance_layer_failure(
             GovernanceLayerName.DETERMINISTIC_CHECKS,
             ("SYSTEM_DETERMINISTIC_CHECKS_FAILURE"),
         )
@@ -86,7 +75,7 @@ def _evaluate_history(
         return HistorySequenceRiskLayer().evaluate(case)
 
     except Exception:
-        return _layer_failure_result(
+        return governance_layer_failure(
             GovernanceLayerName.HISTORY_SEQUENCE_RISK,
             "SYSTEM_HISTORY_RISK_FAILURE",
         )
@@ -99,7 +88,7 @@ def _evaluate_policy(
         return PolicyEngineLayer().evaluate(case)
 
     except Exception:
-        return _layer_failure_result(
+        return governance_layer_failure(
             GovernanceLayerName.POLICY_ENGINE,
             "SYSTEM_POLICY_ENGINE_FAILURE",
         )
@@ -124,7 +113,7 @@ class GovernedAPAgent:
             return self.guardrail.evaluate(case)
 
         except Exception:
-            return _layer_failure_result(
+            return governance_layer_failure(
                 GovernanceLayerName.GUARDRAIL,
                 "SYSTEM_GUARDRAIL_FAILURE",
             )
@@ -150,11 +139,15 @@ class GovernedAPAgent:
                 confidence=None,
             )
 
-        enforcement = enforce_decision(
-            case,
-            recommendation=recommendation,
-            layer_results=layer_results,
-        )
+        try:
+            enforcement = enforce_decision(
+                case,
+                recommendation=recommendation,
+                layer_results=layer_results,
+            )
+
+        except Exception:
+            enforcement = enforcement_failure_decision(recommendation)
 
         return GovernedAgentTrace(
             layer_results=layer_results,

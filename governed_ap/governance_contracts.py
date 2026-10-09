@@ -110,6 +110,18 @@ class GovernanceLayerResult(BaseModel):
         return self
 
 
+def governance_layer_failure(
+    layer: GovernanceLayerName,
+    reason_code: str,
+) -> GovernanceLayerResult:
+    return GovernanceLayerResult(
+        layer=layer,
+        status=LayerExecutionStatus.FIRED,
+        minimum_action=(ExpectedAction.ESCALATE),
+        reason_codes=[reason_code],
+    )
+
+
 class DecisionAgentRecommendation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

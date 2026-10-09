@@ -237,3 +237,34 @@ def test_trace_keeps_llm_confidence():
     trace = agent.process(example.case)
 
     assert trace.recommendation.confidence == 0.73
+
+
+def test_plain_enforcement_failure_fails_closed(
+    monkeypatch,
+):
+    example = generate_legitimate_example(
+        seed=1206,
+        case_type="C1",
+    )
+
+    def raise_failure(
+        *args,
+        **kwargs,
+    ):
+        raise RuntimeError("Simulated gate failure.")
+
+    monkeypatch.setattr(
+        ("governed_ap.governed_agent.enforce_decision"),
+        raise_failure,
+    )
+
+    agent = GovernedAPAgent(
+        guardrail_provider=(passing_guardrail_provider()),
+        decision_provider=(auto_approve_decision_provider()),
+    )
+
+    trace = agent.process(example.case)
+
+    assert trace.final_action == ExpectedAction.ESCALATE
+
+    assert trace.enforcement.trusted_payment_destination is None
