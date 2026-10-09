@@ -1,5 +1,3 @@
-from typing import Protocol
-
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -8,6 +6,9 @@ from pydantic import (
 
 from governed_ap.llm_inputs import (
     case_input_json,
+)
+from governed_ap.llm_provider import (
+    TextCompletionProvider,
 )
 from governed_ap.schemas import (
     BenchmarkCase,
@@ -49,15 +50,6 @@ Do not return markdown or additional text.
 """.strip()
 
 
-class DecisionTextProvider(Protocol):
-    def complete(
-        self,
-        *,
-        system_prompt: str,
-        user_prompt: str,
-    ) -> str: ...
-
-
 class NaiveLLMResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -85,7 +77,7 @@ def build_naive_llm_user_prompt(
 def evaluate_naive_llm(
     case: BenchmarkCase,
     *,
-    provider: DecisionTextProvider,
+    provider: TextCompletionProvider,
 ) -> SystemDecision:
     user_prompt = build_naive_llm_user_prompt(case)
 
