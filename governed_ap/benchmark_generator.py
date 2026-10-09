@@ -17,45 +17,12 @@ from governed_ap.schemas import (
     PurchaseOrder,
     Vendor,
 )
-
-DEVELOPMENT_ATTACK_SUBTYPES = (
-    "T1.1",
-    "T1.2",
-    "T2.1",
-    "T2.3",
-    "T3.1",
-    "T3.2",
-    "T3.3",
-    "T3.5",
-    "T5.1",
-    "T5.2",
-)
-
-HELD_OUT_ATTACK_SUBTYPES = (
-    "T1.3",
-    "T2.2",
-    "T3.4",
-)
-
-SINGLE_LEGITIMATE_CASES = (
-    "C1",
-    "C2",
-    "C3",
-    "C4",
-    "C5",
-    "C6",
-    "C8",
-)
-
-SEQUENCE_LEGITIMATE_CASES = (
-    "C7",
-    "C9",
-)
-
-DEVELOPMENT_SEQUENCE_ATTACK_SUBTYPES = (
-    "T4.1",
-    "T4.2",
-    "T4.3",
+from governed_ap.split_policy import (
+    DEVELOPMENT_ATTACK_SUBTYPES,
+    DEVELOPMENT_SEQUENCE_ATTACK_SUBTYPES,
+    HELD_OUT_ATTACK_SUBTYPES,
+    SEQUENCE_LEGITIMATE_CASES,
+    SINGLE_LEGITIMATE_CASES,
 )
 
 
@@ -234,15 +201,14 @@ def _label_case(
 
 def generate_clean_example(
     seed: int,
-    split: DatasetSplit = (DatasetSplit.DEVELOPMENT),
 ) -> BenchmarkExample:
     case = _build_clean_case(seed)
 
     return _label_case(
         case,
-        split=split,
+        split=DatasetSplit.DEVELOPMENT,
         is_malicious=False,
-        template_id="C1-standard-v1",
+        template_id="C1-dev-v1",
     )
 
 
@@ -797,6 +763,9 @@ def generate_legitimate_sequence(
     seed: int,
     case_type: str,
 ) -> list[BenchmarkExample]:
+    if case_type not in SEQUENCE_LEGITIMATE_CASES:
+        raise ValueError(f"Unsupported legitimate sequence: {case_type}")
+
     if case_type == "C7":
         return _generate_vendor_window_sequence(
             seed,
@@ -806,14 +775,11 @@ def generate_legitimate_sequence(
             use_aliases=False,
         )
 
-    if case_type == "C9":
-        return _generate_po_progress_sequence(
-            seed,
-            scenario_type="C9",
-            is_malicious=False,
-        )
-
-    raise ValueError(f"Unsupported legitimate sequence: {case_type}")
+    return _generate_po_progress_sequence(
+        seed,
+        scenario_type="C9",
+        is_malicious=False,
+    )
 
 
 BenchmarkScenario = list[BenchmarkExample]

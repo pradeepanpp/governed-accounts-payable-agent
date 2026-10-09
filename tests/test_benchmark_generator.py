@@ -4,9 +4,6 @@ from decimal import Decimal
 import pytest
 
 from governed_ap.benchmark_generator import (
-    DEVELOPMENT_ATTACK_SUBTYPES,
-    DEVELOPMENT_SEQUENCE_ATTACK_SUBTYPES,
-    HELD_OUT_ATTACK_SUBTYPES,
     flatten_scenarios,
     generate_clean_example,
     generate_development_attack_example,
@@ -17,6 +14,11 @@ from governed_ap.benchmark_generator import (
 )
 from governed_ap.oracle import evaluate_case
 from governed_ap.schemas import DatasetSplit, ExpectedAction
+from governed_ap.split_policy import (
+    DEVELOPMENT_ATTACK_SUBTYPES,
+    DEVELOPMENT_SEQUENCE_ATTACK_SUBTYPES,
+    HELD_OUT_ATTACK_SUBTYPES,
+)
 
 
 @pytest.mark.parametrize(
@@ -172,19 +174,25 @@ def test_agent_visible_case_contains_no_hidden_ground_truth():
         "attack_subtype",
         "expected_action",
         "expected_reason_codes",
+        "split",
+        "template_id",
+        "scenario_id",
+        "sequence_id",
+        "sequence_position",
     ]
 
     for field in forbidden_fields:
         assert field not in serialized_case
 
 
-def test_requested_split_is_preserved():
+def test_clean_example_uses_development_template():
     example = generate_clean_example(
         seed=42,
-        split=DatasetSplit.CALIBRATION,
     )
 
-    assert example.ground_truth.split == DatasetSplit.CALIBRATION
+    assert example.ground_truth.split == DatasetSplit.DEVELOPMENT
+
+    assert example.ground_truth.template_id == "C1-dev-v1"
 
 
 def test_clean_example_contains_policy_configuration():
