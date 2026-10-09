@@ -47,6 +47,21 @@ class EnforcementGateDecision(BaseModel):
     trusted_payment_destination: str | None = None
 
 
+def enforcement_failure_decision(
+    recommendation: (DecisionAgentRecommendation),
+) -> EnforcementGateDecision:
+    reason = "SYSTEM_ENFORCEMENT_GATE_FAILURE"
+
+    return EnforcementGateDecision(
+        final_action=(ExpectedAction.ESCALATE),
+        recommendation_action=(recommendation.action),
+        governance_floor=(ExpectedAction.ESCALATE),
+        reason_codes=[reason],
+        gate_reason_codes=[reason],
+        trusted_payment_destination=None,
+    )
+
+
 def _stricter_action(
     first: ExpectedAction,
     second: ExpectedAction,
