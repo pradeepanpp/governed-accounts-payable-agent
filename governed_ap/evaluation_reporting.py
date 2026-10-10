@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from governed_ap.benchmark_freeze import dataset_sha256
 from governed_ap.evaluation_bootstrap import bootstrap_headline_intervals
 from governed_ap.evaluation_harness import EvaluationRecord, count_actions
+from governed_ap.evaluation_integrity import validate_experiment_integrity
 from governed_ap.evaluation_metrics import (
     HeadlineMetrics,
     Rate,
@@ -202,6 +203,8 @@ def build_report_from_experiment(
         attempt.status != "COMPLETED" for attempt in run.attempts
     ):
         raise ValueError("Cannot report an incomplete experiment.")
+
+    validate_experiment_integrity(scenarios, run)
 
     base = build_evaluation_report(
         scenarios,

@@ -196,5 +196,5 @@ def test_comparison_rejects_different_benchmark():
         [generate_legitimate_example(9702, "C1")],
     ]
 
-    with pytest.raises(ValueError, match="does not match benchmark"):
+    with pytest.raises(ValueError, match="benchmark example mismatch"):
         _compare(different, left, right)
