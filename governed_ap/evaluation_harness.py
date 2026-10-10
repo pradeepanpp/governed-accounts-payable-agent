@@ -49,7 +49,7 @@ def run_scenarios(
 
         for example in scenario:
             # Pass observable data only. Never pass ground_truth.
-            result = system(example.case)
+            result = system(example.case.model_copy(deep=True))
 
             decision = normalize_decision(result)
 
