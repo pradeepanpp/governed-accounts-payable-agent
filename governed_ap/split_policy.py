@@ -36,6 +36,7 @@ SINGLE_LEGITIMATE_CASES = (
     "C5",
     "C6",
     "C8",
+    "C10",
 )
 
 SEQUENCE_LEGITIMATE_CASES = (

@@ -185,6 +185,7 @@ class GroundTruth(BaseModel):
     sequence_id: str | None = None
     sequence_position: int | None = Field(default=None, gt=0)
     template_id: str | None = None
+    pair_id: str | None = Field(default=None, min_length=1)
     scenario_id: str | None = None
 
     @model_validator(mode="after")

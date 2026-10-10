@@ -480,15 +480,16 @@ def test_pilot_legitimate_scenario_composition():
 
     assert legitimate_counts == Counter(
         {
-            "C1": 6,
-            "C2": 4,
-            "C3": 4,
+            "C1": 4,
+            "C2": 3,
+            "C3": 3,
             "C4": 3,
             "C5": 3,
-            "C6": 4,
+            "C6": 3,
             "C7": 3,
-            "C8": 4,
+            "C8": 3,
             "C9": 3,
+            "C10": 6,
         }
     )
 
