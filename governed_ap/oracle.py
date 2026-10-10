@@ -77,26 +77,30 @@ def check_block_rules(case: BenchmarkCase) -> list[BlockReason]:
     invoice = case.invoice
     purchase_order = case.purchase_order
 
+    # Rule 1: Check whether the invoice references an existing PO.
     if purchase_order is None or invoice.po_id != purchase_order.po_id:
         reasons.append(BlockReason.NO_MATCHING_PO)
         return reasons
 
+    # Rule 2: Detect an exact duplicate of an already PAID invoice.
+    for payment in case.payment_history:
+        if (
+            payment.status == PaymentStatus.PAID
+            and payment.vendor_id == purchase_order.vendor_id
+            and payment.invoice_id == invoice.invoice_id
+            and payment.amount == invoice.total_amount
+            and payment.currency == invoice.currency
+            and payment.payment_date <= invoice.invoice_date
+        ):
+            reasons.append(BlockReason.EXACT_DUPLICATE)
+            break
+
+    # Rule 3: Calculate the PO's committed balance.
+    # Both APPROVED and PAID payments consume the PO balance.
     committed_statuses = {
         PaymentStatus.APPROVED,
         PaymentStatus.PAID,
     }
-
-    for payment in case.payment_history:
-        if (
-            payment.invoice_id == invoice.invoice_id
-            and payment.vendor_id == purchase_order.vendor_id
-            and payment.po_id == purchase_order.po_id
-            and payment.amount == invoice.total_amount
-            and payment.currency == purchase_order.currency
-            and payment.status in committed_statuses
-        ):
-            reasons.append(BlockReason.EXACT_DUPLICATE)
-            break
 
     committed_amount = sum(
         payment.amount
@@ -106,6 +110,7 @@ def check_block_rules(case: BenchmarkCase) -> list[BlockReason]:
         and payment.status in committed_statuses
     )
 
+    # Block when the PO has no remaining committed balance.
     if committed_amount >= purchase_order.total_amount:
         reasons.append(BlockReason.PO_FULLY_INVOICED)
 
