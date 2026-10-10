@@ -1,5 +1,6 @@
 from governed_ap.benchmark_generator import (
     generate_development_sequence_attack,
+    generate_legitimate_example,
     generate_pilot_benchmark,
 )
 from governed_ap.deterministic_baseline import evaluate_deterministic_baseline
@@ -71,3 +72,28 @@ def test_invalid_system_result_is_rejected():
 
     with pytest.raises(TypeError):
         run_scenarios(scenarios, invalid_system)
+
+
+def test_runner_protects_original_case_from_mutation():
+    example = generate_legitimate_example(
+        seed=7201,
+        case_type="C1",
+    )
+
+    original = example.case.model_copy(deep=True)
+
+    def mutating_system(case):
+        case.invoice.raw_text = "Changed by system"
+
+        return SystemDecision(
+            system_name=SystemName.DETERMINISTIC_BASELINE,
+            action=ExpectedAction.AUTO_APPROVE,
+        )
+
+    results = run_scenarios(
+        [[example]],
+        mutating_system,
+    )
+
+    assert example.case == original
+    assert results[0][0].example.case == original
