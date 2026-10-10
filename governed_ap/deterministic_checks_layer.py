@@ -41,6 +41,7 @@ def _check_block_rules(
         and payment.invoice_id == invoice.invoice_id
         and payment.amount == invoice.total_amount
         and payment.currency == invoice.currency
+        and payment.payment_date <= invoice.invoice_date
         for payment in case.payment_history
     )
 
