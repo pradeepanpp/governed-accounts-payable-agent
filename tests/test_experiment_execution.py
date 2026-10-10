@@ -1,3 +1,4 @@
+from decimal import Decimal
 from functools import partial
 
 import pytest
@@ -15,6 +16,11 @@ from governed_ap.experiment_execution import (
 )
 from governed_ap.git_provenance import GitProvenance
 from governed_ap.langgraph_agent import LangGraphGovernedAPAgent
+from governed_ap.llm_usage import (
+    CompletionWithUsage,
+    MeteredTextProvider,
+    UsageCollector,
+)
 from governed_ap.naive_llm_baseline import evaluate_naive_llm
 from governed_ap.schemas import DatasetSplit, ExpectedAction
 from governed_ap.system_decision import SystemDecision, SystemName
@@ -299,3 +305,42 @@ def test_t4_sequence_preserves_all_invoice_executions():
     assert len(result.evaluated[0]) == 3
     assert len(result.attempts) == 3
     assert result.telemetry.attempted_invoices == 3
+
+
+def test_metered_naive_llm_usage_reaches_experiment_telemetry():
+    class MeasuredNaiveProvider:
+        def complete_with_usage(self, *, system_prompt, user_prompt):
+            return CompletionWithUsage(
+                text=('{"action":"AUTO_APPROVE","reason_codes":[],"confidence":0.8}'),
+                input_tokens=120,
+                output_tokens=30,
+                cost_usd=Decimal("0.005"),
+                cost_basis="estimated",
+                provider="test-provider",
+                model="test-model",
+            )
+
+    collector = UsageCollector()
+
+    provider = MeteredTextProvider(
+        MeasuredNaiveProvider(),
+        collector,
+        role="naive",
+    )
+
+    result = run_experiment(
+        [[_example()]],
+        partial(evaluate_naive_llm, provider=provider),
+        run_id="dev-metered-naive",
+        system_name=SystemName.NAIVE_LLM,
+        usage_collector=collector,
+    )
+
+    telemetry = result.telemetry
+
+    assert telemetry.observed_llm_calls == 1
+    assert telemetry.input_tokens == 120
+    assert telemetry.output_tokens == 30
+    assert telemetry.provider_cost_usd == Decimal("0.005")
+    assert telemetry.cost_covered_calls == 1
+    assert result.attempts[0].llm_calls[0].role == "naive"
