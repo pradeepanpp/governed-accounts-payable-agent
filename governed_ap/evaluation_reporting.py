@@ -1,4 +1,5 @@
 from dataclasses import asdict, fields
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -15,6 +16,7 @@ from governed_ap.evaluation_secondary_metrics import (
     SecondaryMetrics,
     calculate_secondary_metrics,
 )
+from governed_ap.experiment_execution import ExperimentRun
 from governed_ap.schemas import BenchmarkExample, DatasetSplit
 from governed_ap.system_decision import SystemName
 
@@ -35,6 +37,31 @@ class IntervalRecord(BaseModel):
     upper: float | None
     eligible_scenarios: int = Field(ge=0)
     resamples: int = Field(ge=0)
+
+
+class ExecutionSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    attempted_invoices: int = Field(ge=0)
+    completed_invoices: int = Field(ge=0)
+    system_failure_invoices: int = Field(ge=0)
+
+    p50_latency_ms: float | None
+    p95_latency_ms: float | None
+
+    observed_llm_calls: int | None = Field(default=None, ge=0)
+    failed_llm_calls: int = Field(ge=0)
+
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+    llm_cost_usd: Decimal | None = None
+
+    input_token_covered_calls: int = Field(ge=0)
+    output_token_covered_calls: int = Field(ge=0)
+    cost_covered_calls: int = Field(ge=0)
+
+    models_used: list[str]
+    cost_basis_counts: dict[str, int]
 
 
 class EvaluationReport(BaseModel):
@@ -65,7 +92,17 @@ class EvaluationReport(BaseModel):
     bootstrap_seed: int
     bootstrap_repetitions: int = Field(ge=2)
 
-    telemetry_status: str = "not_collected"
+    source_dirty: bool | None = None
+    source_revision_origin: Literal["caller_supplied", "local_git"] = "caller_supplied"
+
+    telemetry_status: Literal[
+        "not_collected",
+        "latency_only",
+        "usage_partial",
+        "usage_complete",
+    ] = "not_collected"
+
+    execution_summary: ExecutionSummary | None = None
 
 
 def _metric_records(
@@ -149,3 +186,82 @@ def build_evaluation_report(
         bootstrap_seed=bootstrap_seed,
         bootstrap_repetitions=bootstrap_repetitions,
     )
+
+
+def build_report_from_experiment(
+    scenarios: list[list[BenchmarkExample]],
+    run: ExperimentRun,
+    *,
+    benchmark_seed: int,
+    bootstrap_repetitions: int = 200,
+    bootstrap_seed: int = 2026,
+) -> EvaluationReport:
+    expected_count = sum(len(scenario) for scenario in scenarios)
+
+    if len(run.attempts) != expected_count or any(
+        attempt.status != "COMPLETED" for attempt in run.attempts
+    ):
+        raise ValueError("Cannot report an incomplete experiment.")
+
+    base = build_evaluation_report(
+        scenarios,
+        run.evaluated,
+        run_id=run.run_id,
+        source_revision=run.provenance.revision,
+        system_name=run.system_name,
+        execution_mode=run.execution_mode,
+        model_id=run.model_id,
+        benchmark_seed=benchmark_seed,
+        bootstrap_repetitions=bootstrap_repetitions,
+        bootstrap_seed=bootstrap_seed,
+    )
+
+    telemetry = run.telemetry
+
+    calls = [call for attempt in run.attempts for call in attempt.llm_calls]
+
+    cost_basis_counts = {
+        basis: sum(call.cost_basis == basis for call in calls)
+        for basis in ("unknown", "estimated", "provider_reported")
+    }
+
+    if not run.usage_instrumented:
+        status = "latency_only"
+    elif (
+        calls
+        and telemetry.failed_llm_calls == 0
+        and telemetry.input_token_covered_calls == len(calls)
+        and telemetry.output_token_covered_calls == len(calls)
+        and telemetry.cost_covered_calls == len(calls)
+    ):
+        status = "usage_complete"
+    else:
+        status = "usage_partial"
+
+    summary = ExecutionSummary(
+        attempted_invoices=telemetry.attempted_invoices,
+        completed_invoices=telemetry.completed_invoices,
+        system_failure_invoices=telemetry.system_failure_invoices,
+        p50_latency_ms=telemetry.p50_latency_ms,
+        p95_latency_ms=telemetry.p95_latency_ms,
+        observed_llm_calls=telemetry.observed_llm_calls,
+        failed_llm_calls=telemetry.failed_llm_calls,
+        input_tokens=telemetry.input_tokens,
+        output_tokens=telemetry.output_tokens,
+        llm_cost_usd=telemetry.provider_cost_usd,
+        input_token_covered_calls=telemetry.input_token_covered_calls,
+        output_token_covered_calls=telemetry.output_token_covered_calls,
+        cost_covered_calls=telemetry.cost_covered_calls,
+        models_used=sorted({call.model for call in calls if call.model}),
+        cost_basis_counts=cost_basis_counts,
+    )
+
+    payload = base.model_dump()
+    payload.update(
+        source_dirty=run.provenance.dirty,
+        source_revision_origin="local_git",
+        telemetry_status=status,
+        execution_summary=summary.model_dump(),
+    )
+
+    return EvaluationReport.model_validate(payload)
