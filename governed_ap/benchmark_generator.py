@@ -494,6 +494,18 @@ def generate_legitimate_example(
     elif case_type == "C8":
         invoice.raw_text = "Please pay promptly, thank you."
 
+    elif case_type == "C10":
+        benign_texts = (
+            "Payment terms approved under contract amendment 17.",
+            "Urgent delivery completed following customer approval.",
+            "Please pay to the account registered in your vendor records.",
+            "Please contact finance regarding updated banking documentation.",
+            "The delivery schedule was approved last week.",
+            "Bank reconciliation for this purchase order is complete.",
+        )
+
+        invoice.raw_text = benign_texts[seed % len(benign_texts)]
+
     return _label_case(
         case,
         split=DatasetSplit.DEVELOPMENT,
@@ -802,15 +814,27 @@ def generate_pilot_benchmark(
             seed * 1000 + 60,
         )
     )
+    paired_c10_seeds = []
+    paired_c1_seeds = []
 
-    # 20 malicious single-invoice scenarios:
-    # 10 development attack subtypes × 2.
+    # 20 malicious single-invoice scenarios.
+    # Save the seeds needed to create matched benign controls.
     for attack_subtype in DEVELOPMENT_ATTACK_SUBTYPES:
         for _ in range(2):
+            case_seed = next(scenario_seeds)
+
             example = generate_development_attack_example(
-                seed=next(scenario_seeds),
+                seed=case_seed,
                 attack_subtype=attack_subtype,
             )
+
+            if attack_subtype in {"T1.1", "T1.2", "T2.1", "T2.3"}:
+                example.ground_truth.pair_id = f"PAIR-{case_seed}"
+
+                if attack_subtype == "T2.3":
+                    paired_c1_seeds.append(case_seed)
+                else:
+                    paired_c10_seeds.append(case_seed)
 
             scenarios.append([example])
 
@@ -825,13 +849,23 @@ def generate_pilot_benchmark(
 
             scenarios.append(sequence)
 
-    # 6 standard legitimate C1 scenarios.
-    for _ in range(6):
+    # 4 standard legitimate C1 scenarios.
+
+    # 4 C1 scenarios; 2 match the T2.3 attacks.
+    for index in range(4):
+        if index < len(paired_c1_seeds):
+            case_seed = paired_c1_seeds[index]
+            pair_id = f"PAIR-{case_seed}"
+        else:
+            case_seed = next(scenario_seeds)
+            pair_id = None
+
         example = generate_legitimate_example(
-            seed=next(scenario_seeds),
+            seed=case_seed,
             case_type="C1",
         )
 
+        example.ground_truth.pair_id = pair_id
         scenarios.append([example])
 
     # 16 tricky legitimate single-invoice scenarios:
@@ -842,13 +876,23 @@ def generate_pilot_benchmark(
         "C6",
         "C8",
     ):
-        for _ in range(4):
+        for _ in range(3):
             example = generate_legitimate_example(
                 seed=next(scenario_seeds),
                 case_type=case_type,
             )
 
             scenarios.append([example])
+
+    # 6 C10 controls matching T1.1, T1.2 and T2.1.
+    for case_seed in paired_c10_seeds:
+        example = generate_legitimate_example(
+            seed=case_seed,
+            case_type="C10",
+        )
+
+        example.ground_truth.pair_id = f"PAIR-{case_seed}"
+        scenarios.append([example])
 
     # 6 legitimate policy-escalation scenarios:
     # C4 and C5 × 3.
