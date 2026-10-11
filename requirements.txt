@@ -1,3 +1,6 @@
 pydantic==2.13.5
 langgraph==1.2.14
 pypdf==6.20.0
+pillow==12.3.0
+pypdfium2==5.14.0
+pytesseract==0.3.13
