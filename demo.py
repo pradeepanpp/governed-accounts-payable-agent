@@ -1,9 +1,15 @@
 import argparse
+from pathlib import Path
 from time import perf_counter
 
 from governed_ap.benchmark_generator import (
     generate_development_attack_example,
     generate_legitimate_example,
+)
+from governed_ap.invoice_extraction import (
+    InvoiceIntakeError,
+    case_from_invoice_text,
+    render_invoice_text,
 )
 from governed_ap.langgraph_agent import LangGraphGovernedAPAgent
 
@@ -89,27 +95,60 @@ def show_result(name, case, agent):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Offline governed accounts-payable agent demo.")
+    parser = argparse.ArgumentParser(description="Governed accounts-payable agent demonstration.")
+
     parser.add_argument(
         "--mode",
         choices=("mock", "live"),
         default="mock",
     )
+
     parser.add_argument(
         "--model",
         default=None,
-        help="LiteLLM model identifier for live mode.",
     )
+
+    parser.add_argument(
+        "--allow-paid-api",
+        action="store_true",
+        help="Explicitly authorize chargeable live model calls.",
+    )
+
     parser.add_argument(
         "--scenario",
         choices=("all", "legitimate", "bank", "duplicate"),
         default="all",
     )
 
+    parser.add_argument(
+        "--input",
+        choices=("structured", "text"),
+        default="structured",
+        help="Choose structured or locally parsed text input.",
+    )
+
+    parser.add_argument(
+        "--invoice-file",
+        type=Path,
+        default=None,
+        help="Read one labeled invoice text file.",
+    )
+
     args = parser.parse_args()
 
-    if args.mode == "live" and not args.model:
-        parser.error("--model is required in live mode")
+    if args.mode == "live":
+        if not args.allow_paid_api:
+            parser.error("Live mode spends API credits. Explicit --allow-paid-api is required.")
+
+        if not args.model:
+            parser.error("--model is required in live mode")
+
+    if args.invoice_file is not None:
+        if args.input != "text":
+            parser.error("--invoice-file requires --input text")
+
+        if args.scenario == "all":
+            parser.error("Choose one --scenario when using --invoice-file")
 
     agent = create_agent(args.mode, args.model)
     examples = create_examples()
@@ -117,10 +156,40 @@ def main():
     selected = examples.keys() if args.scenario == "all" else (args.scenario,)
 
     print(f"Provider mode: {args.mode}")
-    print("Structured-input, offline decision demonstration.")
+    print(f"Input mode: {args.input}")
+    print("Synthetic accounts-payable decision demonstration.")
 
     for name in selected:
-        show_result(name, examples[name], agent)
+        case = examples[name]
+
+        if args.input == "text":
+            try:
+                if args.invoice_file is not None:
+                    source_text = args.invoice_file.read_text(encoding="utf-8")
+                else:
+                    source_text = render_invoice_text(case.invoice)
+
+                case = case_from_invoice_text(
+                    case,
+                    source_text,
+                )
+
+            except (
+                InvoiceIntakeError,
+                OSError,
+                UnicodeError,
+            ) as error:
+                print(f"\nSCENARIO: {name.upper()}")
+                print("Intake disposition: ESCALATE")
+                print("Reason: INVOICE_INTAKE_FAILURE")
+                print(f"Detail: {error}")
+                print("Agent invoked: NO")
+                print("Payment executed: NO")
+                continue
+
+            print(f"\nText extraction completed: {name}")
+
+        show_result(name, case, agent)
 
 
 if __name__ == "__main__":
