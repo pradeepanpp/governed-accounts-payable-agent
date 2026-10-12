@@ -1,3 +1,4 @@
+
 name: CI
 
 on:
@@ -33,3 +34,27 @@ jobs:
 
       - name: Run tests
         run: python -m pytest -q
+
+  docker:
+    needs: test
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Build local-only API image
+        run: docker build --tag governed-ap-assessment:ci .
+
+      - name: Verify Tesseract installation
+        run: docker run --rm --entrypoint tesseract governed-ap-assessment:ci --list-langs
+
+      - name: Start local-only API container
+        run: docker run --detach --name ap-ci-smoke --publish 127.0.0.1:8000:8000 governed-ap-assessment:ci
+
+      - name: Check local health endpoint
+        run: curl --fail --retry 8 --retry-delay 2 --retry-connrefused http://127.0.0.1:8000/health
+
+      - name: Stop smoke-test container
+        if: always()
+        run: docker rm --force ap-ci-smoke || true
