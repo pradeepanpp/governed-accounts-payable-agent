@@ -1,5 +1,6 @@
 """Offline API tests; no OCR binary, external service, or paid model needed."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -235,6 +236,34 @@ def test_audit_log_omits_invoice_details(monkeypatch):
     response = upload()
 
     assert response.status_code == 200
-    assert events == ["assessment_completed source=NATIVE reason_count=1 action=ESCALATE"]
-    assert "INV-CONFIDENTIAL-001" not in events[0]
-    assert TEST_API_KEY not in events[0]
+
+    records = [json.loads(event) for event in events]
+
+    assessment = next(record for record in records if record["event"] == "assessment_completed")
+
+    http_request = next(record for record in records if record["event"] == "http_request")
+
+    request_id = response.headers["X-Request-ID"]
+
+    assert assessment["request_id"] == request_id
+    assert http_request["request_id"] == request_id
+    assert assessment["source"] == "NATIVE"
+    assert assessment["action"] == "ESCALATE"
+
+    logged_text = json.dumps(records)
+
+    assert "INV-CONFIDENTIAL-001" not in logged_text
+    assert TEST_API_KEY not in logged_text
+
+
+def test_request_ids_are_unique_and_cover_authentication_failures():
+    first = client.get("/health")
+    second = client.get("/health")
+    unauthorized = upload(headers={})
+
+    assert unauthorized.status_code == 401
+
+    request_ids = [response.headers["X-Request-ID"] for response in (first, second, unauthorized)]
+
+    assert len(set(request_ids)) == 3
+    assert all(len(request_id) == 32 for request_id in request_ids)
