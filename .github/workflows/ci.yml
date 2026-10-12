@@ -1,3 +1,4 @@
+
 name: CI
 
 on:
@@ -33,3 +34,58 @@ jobs:
 
       - name: Run tests
         run: python -m pytest -q
+
+  docker:
+    needs: test
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Build local-only API image
+        run: docker build --tag governed-ap-assessment:ci .
+
+      - name: Verify Tesseract installation
+        run: docker run --rm --entrypoint tesseract governed-ap-assessment:ci --list-langs
+
+      - name: Start local-only API container
+        run: docker run --detach --name ap-ci-smoke --publish 127.0.0.1:8000:8000 governed-ap-assessment:ci
+
+            
+      - name: Check local health endpoint
+        shell: bash
+        run: |
+          for attempt in {1..20}; do
+            echo "Checking API readiness: attempt $attempt/20"
+
+            if curl --fail --silent --show-error --max-time 3 \
+              --noproxy '*' http://127.0.0.1:8000/health; then
+              echo "API health check passed."
+              exit 0
+            fi
+
+            if [ "$(docker inspect --format='{{.State.Running}}' ap-ci-smoke)" != "true" ]; then
+              echo "ERROR: API container stopped unexpectedly."
+              docker logs ap-ci-smoke || true
+              exit 1
+            fi
+
+            echo "API is not ready yet."
+            sleep 2
+          done
+
+          echo "ERROR: API did not become ready."
+          docker ps --all
+          docker logs ap-ci-smoke || true
+          exit 1
+
+      - name: Show container logs on failure
+        if: failure()
+        run: |
+          docker ps --all
+          docker logs ap-ci-smoke || true
+
+      - name: Stop smoke-test container
+        if: always()
+        run: docker rm --force ap-ci-smoke || true
