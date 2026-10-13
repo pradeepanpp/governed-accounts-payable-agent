@@ -122,6 +122,15 @@ def _blank_pdf(path: Path) -> None:
         writer.write(output)
 
 
+def _two_page_blank_pdf(path: Path) -> None:
+    writer = PdfWriter()
+    writer.add_blank_page(width=200, height=200)
+    writer.add_blank_page(width=200, height=200)
+
+    with path.open("wb") as output:
+        writer.write(output)
+
+
 def test_ocr_fallback_for_image_only_pdf(
     tmp_path,
     monkeypatch,
@@ -201,3 +210,73 @@ def test_missing_language_directory_fails_safely(
         match="language directory is missing",
     ):
         read_invoice_pdf(path)
+
+
+def test_total_ocr_budget_reduces_later_page_timeout(
+    tmp_path,
+    monkeypatch,
+):
+    path = tmp_path / "two-pages.pdf"
+    _two_page_blank_pdf(path)
+
+    elapsed = [0.0]
+    timeouts = []
+
+    monkeypatch.setattr(
+        reader,
+        "monotonic",
+        lambda: elapsed[0],
+    )
+
+    def fake_ocr(*args, **kwargs):
+        timeouts.append(kwargs["timeout"])
+        elapsed[0] += 35.0 if len(timeouts) == 1 else 10.0
+        return SAMPLE
+
+    monkeypatch.setattr(
+        pytesseract,
+        "image_to_string",
+        fake_ocr,
+    )
+
+    text, source = read_invoice_pdf(path)
+
+    assert source == "OCR"
+    assert text.count("INV-2026-001") == 2
+    assert timeouts == [30.0, 25.0]
+
+
+def test_total_ocr_budget_stops_later_page(
+    tmp_path,
+    monkeypatch,
+):
+    path = tmp_path / "two-pages.pdf"
+    _two_page_blank_pdf(path)
+
+    elapsed = [0.0]
+    calls = []
+
+    monkeypatch.setattr(
+        reader,
+        "monotonic",
+        lambda: elapsed[0],
+    )
+
+    def fake_ocr(*args, **kwargs):
+        calls.append(kwargs["timeout"])
+        elapsed[0] = 61.0
+        return SAMPLE
+
+    monkeypatch.setattr(
+        pytesseract,
+        "image_to_string",
+        fake_ocr,
+    )
+
+    with pytest.raises(
+        TimeoutError,
+        match="OCR total time budget exceeded",
+    ):
+        read_invoice_pdf(path)
+
+    assert len(calls) == 1
