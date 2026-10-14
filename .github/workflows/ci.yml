@@ -45,6 +45,28 @@ jobs:
       - name: Build local-only API image
         run: docker build --tag governed-ap-assessment:ci .
 
+      - name: Scan image for known high and critical vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0, pinned to immutable commit
+        with:
+          scan-type: image
+          image-ref: governed-ap-assessment:ci
+          scanners: vuln
+          format: json
+          output: trivy-image-report.json
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          exit-code: "0" # Report findings first; scanner execution failures still fail the step.
+
+      - name: Preserve vulnerability report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 pinned commit
+        with:
+          name: trivy-image-report
+          path: trivy-image-report.json
+          retention-days: 14
+          if-no-files-found: warn
+
       - name: Verify Tesseract installation
         run: docker run --rm --entrypoint tesseract governed-ap-assessment:ci --list-langs
 
