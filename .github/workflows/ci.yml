@@ -125,6 +125,32 @@ jobs:
           print("Authenticated fail-closed assessment passed.")
           PY
 
+      - name: Verify real Tesseract OCR on fictional scanned PDF
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --max-time 90 \
+            --header "X-API-Key: ${GOVERNED_AP_API_KEY}" \
+            --form "file=@tests/fixtures/ci_fictional_scanned_invoice.pdf;type=application/pdf" \
+            http://127.0.0.1:8000/v1/invoices/assess \
+            > "$RUNNER_TEMP/ocr-assessment.json"
+
+          python3 - "$RUNNER_TEMP/ocr-assessment.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          result = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          assert result["source"] == "OCR", "Expected image-only PDF OCR"
+          assert result["extracted"]["invoice_number"] == "TEST-2026-001"
+          assert result["extracted"]["currency"] == "AED"
+          assert result["extracted"]["total"] == "63.00"
+          assert result["action"] == "ESCALATE"
+          assert result["human_review_required"] is True
+          assert result["payment_executed"] is False
+          assert result["governance_agent_invoked"] is False
+          print("Real Tesseract OCR and review-only assessment passed.")
+          PY
+
       - name: Show container logs on failure
         if: failure()
         run: |
