@@ -1,25 +1,29 @@
-
-FROM python:3.11-slim-bookworm
+# Security remediation candidate. Compare its scan with the Bookworm baseline
+# and verify that the real PDF/OCR tests pass before using it for a release.
+FROM python:3.11-slim-trixie
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Install local OCR with English and Arabic language support.
+# Install local OCR using Debian 13's maintained OS packages.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         tesseract-ocr tesseract-ocr-eng tesseract-ocr-ara \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python application dependencies.
+# Build-time package utilities are not intentionally used by this HTTP service.
+# Remove them from the runtime image to eliminate vulnerable vendored copies;
+# validate runtime imports, OCR, and API behavior in Docker before merging.
 COPY requirements.txt ./
-RUN python -m pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install --no-cache-dir -r requirements.txt \
+    && python -m pip uninstall --yes setuptools wheel \
+    && python -m pip check
 
-# Copy the existing Python package, including our new API.
 COPY governed_ap/ ./governed_ap/
 
-# Do not run the application as root.
+# Preserve the previously implemented unprivileged runtime.
 RUN useradd --system --uid 10001 --create-home appuser
 USER appuser
 
