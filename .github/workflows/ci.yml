@@ -45,6 +45,31 @@ jobs:
       - name: Build local-only API image
         run: docker build --tag governed-ap-assessment:ci .
 
+      - name: Scan image for known high and critical vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0, pinned to immutable commit
+        with:
+          scan-type: image
+          image-ref: governed-ap-assessment:ci
+          scanners: vuln
+          format: json
+          output: trivy-image-report.json
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          exit-code: "0" # Report findings first; scanner execution failures still fail the step.
+
+      - name: Preserve vulnerability report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 pinned commit
+        with:
+          name: trivy-image-report
+          path: trivy-image-report.json
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Enforce fixable high and critical vulnerability policy
+        run: python3 scripts/check_fixable_vulnerabilities.py trivy-image-report.json
+
       - name: Verify Tesseract installation
         run: docker run --rm --entrypoint tesseract governed-ap-assessment:ci --list-langs
 
@@ -151,11 +176,61 @@ jobs:
           print("Real Tesseract OCR and review-only assessment passed.")
           PY
 
+      - name: Start hardened, network-isolated assessment container
+        shell: bash
+        run: |
+          docker run --detach \
+            --name ap-ci-hardened \
+            --network none \
+            --read-only \
+            --tmpfs /tmp:rw,nosuid,nodev,noexec,size=256m,mode=1777 \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --memory 768m --memory-swap 768m \
+            --cpus 2 --pids-limit 128 \
+            --mount type=bind,source="$PWD/tests/fixtures",target=/fixtures,readonly \
+            --env GOVERNED_AP_API_KEY \
+            governed-ap-assessment:ci
+
+      - name: Verify hardened restrictions and real HTTP OCR behavior
+        shell: bash
+        timeout-minutes: 5
+        run: |
+          python3 - <<'PY'
+          import json
+          import subprocess
+
+          inspected = json.loads(
+              subprocess.check_output(["docker", "inspect", "ap-ci-hardened"], text=True)
+          )[0]
+          host = inspected["HostConfig"]
+          assert host["ReadonlyRootfs"] is True
+          assert host["NetworkMode"] == "none"
+          assert "ALL" in host["CapDrop"]
+          assert any(value.startswith("no-new-privileges") for value in host["SecurityOpt"])
+          assert host["Memory"] == 768 * 1024 * 1024
+          assert host["MemorySwap"] == host["Memory"]
+          assert host["NanoCpus"] == 2_000_000_000
+          assert host["PidsLimit"] == 128
+          assert "/tmp" in host["Tmpfs"]
+          assert any(
+              mount["Destination"] == "/fixtures" and mount["RW"] is False
+              for mount in inspected["Mounts"]
+          )
+          print("Hardened Docker runtime restrictions verified.")
+          PY
+          docker exec --interactive ap-ci-hardened python - < scripts/verify_hardened_runtime.py
+
       - name: Show container logs on failure
         if: failure()
         run: |
           docker ps --all
           docker logs ap-ci-smoke || true
+          docker logs ap-ci-hardened || true
+
+      - name: Stop hardened test container
+        if: always()
+        run: docker rm --force ap-ci-hardened || true
 
       - name: Stop smoke-test container
         if: always()
