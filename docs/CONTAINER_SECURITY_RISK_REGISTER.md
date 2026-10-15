@@ -30,7 +30,8 @@ These are package/vulnerability findings, **not** demonstrated remote exploits o
 ### Existing, verified and proposed controls
 
 - **Implemented/tested:** non-root container account; authenticated API key; bound PDF size/page counts; OCR subprocess timeout and cumulative budget; review-only `ESCALATE` action; no actual payment execution; real scanned-PDF OCR in Docker CI.
-- **Not yet validated for public deployment:** container read-only root filesystem, dropped Linux capabilities, memory/CPU/PID limits, outbound-network restrictions, seccomp/AppArmor policy, request-rate enforcement under load, process-level resource bounds for all native PDF/rendering operations, and a production secrets lifecycle.
+- **Hardened CI demonstration (pass pending):** `.github/workflows/ci.yml` runs a *second, separate* container with a read-only root filesystem, writable 256 MiB `/tmp` tmpfs, non-root UID 10001, no Linux capabilities, `no-new-privileges`, 768 MiB memory/swap limit, two CPUs, 128 PID limit, and `--network none`. The script `scripts/verify_hardened_runtime.py` tests in-container loopback HTTP health, API-key rejection, corrupted-PDF escalation, and real scanned-PDF OCR escalation. The test validates these specific restrictions only after a successful GitHub Actions run. This does not change the default `docker run` configuration or automatically enforce these controls in any future Azure service.
+- **Not yet validated for public deployment:** enforced sandbox configuration in the actual deployment platform, seccomp/AppArmor policy, multi-request resource exhaustion and native PDF-rendering limits, production rate limits, secret rotation, and an externally reviewed egress policy. `--network none` is exercised only in the isolated CI demonstration; a real remote-accessible API would require an explicitly reviewed network design.
 - **CI policy:** preserve the full JSON report; **fail** on HIGH/CRITICAL findings for which Trivy supplies a non-empty `FixedVersion`; **do not suppress** unfixed findings. A passing fixable-only gate is **not** a security clearance.
 
 ## Deployment decision — NOT APPROVED for public internet exposure
@@ -42,8 +43,10 @@ These are package/vulnerability findings, **not** demonstrated remote exploits o
 1. CI passes Python regression tests, real authenticated PDF/OCR integration, and the fixable vulnerability gate; full security JSON artifact is retained.
 2. Review `CVE-2026-6653` and document concrete XML parser reachability, relevant package fixes, or formally accepted residual risk with named approver/date and review expiry.
 3. Investigate applicable `libtiff`, `libexpat`, and Tesseract CVEs based on actual processing paths; patch or isolate affected operations wherever possible.
-4. Demonstrate hardened runtime configuration: non-root, read-only root filesystem when feasible, dropped capabilities, memory/CPU/PID restrictions, and limited egress; verify failures safely escalate without payment execution.
+4. Confirm the hardened CI demonstration passes: non-root, read-only root filesystem, dropped capabilities, memory/CPU/PID restrictions, isolated network with loopback-only HTTP tests, and fail-closed scanned-PDF assessment. Separately verify equivalent hardening and operational limits in the *actual deployment environment*.
 5. Obtain an explicit new deployment authorization after risk review. **A CI green check is not authorization.**
+
+**Decision after a green hardened-runtime CI test:** The local/CI hardening milestone may be merged as engineering evidence; **public deployment remains HOLD**. No risk acceptance or release authorization is inferred from a successful CI check.
 
 **Decision owner:** Project maintainer. **Recorded:** October 15, 2026. **Re-review:** Before any externally reachable deployment and following any material image/dependency change.
 
