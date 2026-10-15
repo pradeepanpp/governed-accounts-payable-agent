@@ -1,0 +1,5 @@
+# Installs the existing API's dependencies, plus separate local UI dependencies.
+# The Docker API image still uses requirements.txt only.
+-r requirements.txt
+httpx==0.28.1
+streamlit==1.65.0
