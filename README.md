@@ -1,94 +1,111 @@
-# Governed Accounts Payable AI Agent
+---
+license: apache-2.0
+tags:
+- vision
+datasets:
+- imagenet-21k
+inference: false
+---
 
-[![CI](https://github.com/pradeepanpp/governed-accounts-payable-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/pradeepanpp/governed-accounts-payable-agent/actions/workflows/ci.yml)
+# Vision Transformer (base-sized model) 
 
-A research-focused AI engineering project exploring how governance controls affect the safety and automation of accounts payable decisions. It combines an experimental agent workflow with a separate, read-only PDF assessment API.
+Vision Transformer (ViT) model pre-trained on ImageNet-21k (14 million images, 21,843 classes) at resolution 224x224. It was introduced in the paper [An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale](https://arxiv.org/abs/2010.11929) by Dosovitskiy et al. and first released in [this repository](https://github.com/google-research/vision_transformer). However, the weights were converted from the [timm repository](https://github.com/rwightman/pytorch-image-models) by Ross Wightman, who already converted the weights from JAX to PyTorch. Credits go to him. 
 
-## Project overview
+Disclaimer: The team releasing ViT did not write a model card for this model so this model card has been written by the Hugging Face team.
 
-The project has two distinct components:
+## Model description
 
-- **Governed decision workflow:** A LangGraph-based research workflow using fictional accounts payable records to study policy checks, prompt-injection risks, human review, and governance-layer trade-offs.
-- **Read-only PDF API:** A FastAPI service that extracts invoice fields from text-based or scanned PDFs using local Tesseract OCR. It always requires human review and never authorizes or executes payments.
+The Vision Transformer (ViT) is a transformer encoder model (BERT-like) pretrained on a large collection of images in a supervised fashion, namely ImageNet-21k, at a resolution of 224x224 pixels. 
 
-**Research question:** How much does each governance layer reduce unsafe autonomous decisions, and what does it cost in automation, human review, latency, and model usage?
+Images are presented to the model as a sequence of fixed-size patches (resolution 16x16), which are linearly embedded. One also adds a [CLS] token to the beginning of a sequence to use it for classification tasks. One also adds absolute position embeddings before feeding the sequence to the layers of the Transformer encoder.
 
-## System design
+Note that this model does not provide any fine-tuned heads, as these were zero'd by Google researchers. However, the model does include the pre-trained pooler, which can be used for downstream tasks (such as image classification).
 
-```text
-Research workflow (synthetic data)
-Invoice + fictional ERP context
-    -> Extraction and deterministic checks
-    -> Guardrail, history and policy checks
-    -> Agent recommendation
-    -> Deterministic enforcement gate
-    -> Simulated AUTO_APPROVE / ESCALATE / BLOCK
+By pre-training the model, it learns an inner representation of images that can then be used to extract features useful for downstream tasks: if you have a dataset of labeled images for instance, you can train a standard classifier by placing a linear layer on top of the pre-trained encoder. One typically places a linear layer on top of the [CLS] token, as the last hidden state of this token can be seen as a representation of an entire image.
 
-Read-only API (separate from the agent)
-Uploaded PDF
-    -> Native text extraction or local OCR
-    -> Invoice field extraction
-    -> ESCALATE + human review required
+## Intended uses & limitations
+
+You can use the raw model for image classification. See the [model hub](https://huggingface.co/models?search=google/vit) to look for
+fine-tuned versions on a task that interests you.
+
+### How to use
+
+Here is how to use this model in PyTorch:
+
+```python
+from transformers import ViTImageProcessor, ViTModel
+from PIL import Image
+import requests
+
+url = 'http://images.cocodataset.org/val2017/000000039769.jpg'
+image = Image.open(requests.get(url, stream=True).raw)
+
+processor = ViTImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k')
+model = ViTModel.from_pretrained('google/vit-base-patch16-224-in21k')
+inputs = processor(images=image, return_tensors="pt")
+
+outputs = model(**inputs)
+last_hidden_states = outputs.last_hidden_state
 ```
 
-The HTTP API does **not** invoke the LangGraph decision agent, verify ERP records, or initiate payments.
+Here is how to use this model in JAX/Flax:
 
-## Run the PDF API locally
+```python
+from transformers import ViTImageProcessor, FlaxViTModel
+from PIL import Image
+import requests
 
-**Requirements:** Docker Desktop and Windows PowerShell.
+url = 'http://images.cocodataset.org/val2017/000000039769.jpg'
+image = Image.open(requests.get(url, stream=True).raw)
 
-```powershell
-docker build -t governed-ap-assessment:local .
+processor = ViTImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k')
+model = FlaxViTModel.from_pretrained('google/vit-base-patch16-224-in21k')
 
-$env:GOVERNED_AP_API_KEY = python -c "import secrets; print(secrets.token_urlsafe(32))"
-
-docker run --rm --detach --name governed-ap-local --cpus=1 --memory=1g --env GOVERNED_AP_API_KEY --publish 127.0.0.1:8000:8000 governed-ap-assessment:local
+inputs = processor(images=image, return_tensors="np")
+outputs = model(**inputs)
+last_hidden_states = outputs.last_hidden_state
 ```
 
-Check the service:
+## Training data
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:8000/health
+The ViT model was pretrained on [ImageNet-21k](http://www.image-net.org/), a dataset consisting of 14 million images and 21k classes. 
+
+## Training procedure
+
+### Preprocessing
+
+The exact details of preprocessing of images during training/validation can be found [here](https://github.com/google-research/vision_transformer/blob/master/vit_jax/input_pipeline.py). 
+
+Images are resized/rescaled to the same resolution (224x224) and normalized across the RGB channels with mean (0.5, 0.5, 0.5) and standard deviation (0.5, 0.5, 0.5).
+
+### Pretraining
+
+The model was trained on TPUv3 hardware (8 cores). All model variants are trained with a batch size of 4096 and learning rate warmup of 10k steps. For ImageNet, the authors found it beneficial to additionally apply gradient clipping at global norm 1. Pre-training resolution is 224.
+
+## Evaluation results
+
+For evaluation results on several image classification benchmarks, we refer to tables 2 and 5 of the original paper. Note that for fine-tuning, the best results are obtained with a higher resolution (384x384). Of course, increasing the model size will result in better performance.
+
+### BibTeX entry and citation info
+
+```bibtex
+@misc{wu2020visual,
+      title={Visual Transformers: Token-based Image Representation and Processing for Computer Vision}, 
+      author={Bichen Wu and Chenfeng Xu and Xiaoliang Dai and Alvin Wan and Peizhao Zhang and Zhicheng Yan and Masayoshi Tomizuka and Joseph Gonzalez and Kurt Keutzer and Peter Vajda},
+      year={2020},
+      eprint={2006.03677},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV}
+}
 ```
 
-Open **http://127.0.0.1:8000/docs** to submit a fictional invoice PDF through the interactive API documentation. Use the **Authorize** control to supply the key from `GOVERNED_AP_API_KEY`.
-
-| Endpoint | Purpose |
-| --- | --- |
-| `GET /health` | Local service health check |
-| `POST /v1/invoices/assess` | Authenticated PDF intake and review-only assessment |
-
-The assessment endpoint requires the `X-API-Key` header. Missing or incorrect client credentials return HTTP `401`; missing or weak server key configuration returns HTTP `503`. PDF uploads are limited to 15 MB, with an additional HTTP body-size limit.
-
-Stop the container:
-
-```powershell
-docker stop governed-ap-local
+```bibtex
+@inproceedings{deng2009imagenet,
+  title={Imagenet: A large-scale hierarchical image database},
+  author={Deng, Jia and Dong, Wei and Socher, Richard and Li, Li-Jia and Li, Kai and Fei-Fei, Li},
+  booktitle={2009 IEEE conference on computer vision and pattern recognition},
+  pages={248--255},
+  year={2009},
+  organization={Ieee}
+}
 ```
-
-Keep API keys, real invoices, and sensitive financial information out of Git.
-
-## Run the tests
-
-With Python 3.11+ and a virtual environment activated:
-
-```powershell
-python -m pip install -r requirements-dev.txt
-python -m pytest -q
-ruff check .
-ruff format --check .
-```
-
-GitHub Actions also runs Python checks and a Docker smoke test.
-
-## Safety results and limitations
-
-**The research workflow has not passed its development safety gate.** In a fixed mock-provider benchmark of 60 scenarios and 84 invoices, 4 of 26 unsafe cases resulted in unsafe approvals. These results do not measure the performance of a functioning LLM guardrail. See [Development Safety Findings](docs/DEVELOPMENT_SAFETY_FINDINGS.md).
-
-The PDF API is deliberately narrower: it always returns `ESCALATE`, requires human review, and performs no payment operations. Local tests confirmed native-text extraction and OCR on fictional invoices; they do not establish OCR accuracy across real-world layouts or languages. The Docker image includes English and Arabic OCR resources, but multilingual accuracy has not been established.
-
-This is a **local research and portfolio prototype**, not a production payment system. Public deployment would require additional security controls, including HTTPS, managed secrets, access policies, monitoring, and a formal security review.
-
-## Technology
-
-Python · LangGraph · FastAPI · Pydantic · Tesseract OCR · Docker · pytest · Ruff · GitHub Actions
