@@ -67,6 +67,9 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
+      - name: Enforce fixable high and critical vulnerability policy
+        run: python3 scripts/check_fixable_vulnerabilities.py trivy-image-report.json
+
       - name: Verify Tesseract installation
         run: docker run --rm --entrypoint tesseract governed-ap-assessment:ci --list-langs
 
