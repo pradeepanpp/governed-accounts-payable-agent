@@ -19,9 +19,7 @@ def test_blocks_high_with_known_fix(tmp_path):
 
 
 def test_blocks_critical_with_known_fix():
-    blockers, total = evaluate_report(
-        report_with({"Severity": "CRITICAL", "FixedVersion": "1.2"})
-    )
+    blockers, total = evaluate_report(report_with({"Severity": "CRITICAL", "FixedVersion": "1.2"}))
     assert total == 1
     assert len(blockers) == 1
 
